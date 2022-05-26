@@ -61,9 +61,14 @@ class ITask {
   [[nodiscard]] virtual uint64_t GetInterval() const = 0;
 
   /**
-   * @brief Executes the task main functionality.
+   * @brief Returns the period of the task
+   * @return period of the task in milliseconds.
    */
-  virtual void Execute() = 0;
+  [[nodiscard]] virtual int GetFd() const = 0;
+
+  virtual void OnMessageReceived(const char* data, const size_t len) = 0;
+  virtual void OnTimeout() = 0;
+  virtual void OnReadyToWrite() = 0;
 };
 
 }  // namespace uas::platform::task
