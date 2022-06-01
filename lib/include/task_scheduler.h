@@ -9,6 +9,7 @@
 #include <vector>         // for vector
 
 #include "common.h"  // for OpResult
+#include "fd_container.h"
 
 /** @brief forward-declare pollfd struct */
 struct pollfd;
@@ -59,10 +60,12 @@ class TaskScheduler {
 
   std::unordered_map<std::string, Timer> task_map_{};
   std::unordered_map<int, ITask*> fd_map_{};
+  FdContainer<100> timer_fds_{};
+  FdContainer<100> io_fds_{};
   std::atomic_bool run_{false};
   std::future<void> thread_;
 };
 
-}  // namespace uas::platform::task
+}  // namespace ts
 
 #endif  // SCHEDULER_LIB_SCHEDULER_H_

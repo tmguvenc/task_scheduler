@@ -2,8 +2,8 @@
 #ifndef SCHEDULER_LIB_COMMON_H_
 #define SCHEDULER_LIB_COMMON_H_
 
-#include <string>
 #include <optional>
+#include <string>
 
 namespace ts {
 

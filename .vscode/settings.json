@@ -1,0 +1,7 @@
+{
+  "files.associations": {
+    "atomic": "cpp",
+    "unordered_set": "cpp"
+  },
+  "cmake.configureOnOpen": false
+}

@@ -61,8 +61,8 @@ class ITask {
   [[nodiscard]] virtual uint64_t GetInterval() const = 0;
 
   /**
-   * @brief Returns the period of the task
-   * @return period of the task in milliseconds.
+   * @brief Returns the io fd of the task
+   * @return IO file descriptor
    */
   [[nodiscard]] virtual int GetFd() const = 0;
 
@@ -71,6 +71,6 @@ class ITask {
   virtual void OnReadyToWrite() = 0;
 };
 
-}  // namespace uas::platform::task
+}  // namespace ts
 
 #endif  // SCHEDULER_LIB_TASK_H_

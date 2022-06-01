@@ -1,31 +1,31 @@
 
 #include "task_scheduler.h"
 
-#include <bits/types/struct_itimerspec.h> // for itimerspec
-#include <cxxabi.h>                       // for __forced_unwind
-#include <poll.h>                         // for pollfd, poll, POLLIN
-#include <sys/timerfd.h>                  // for timerfd_create, timerfd_se...
-#include <unistd.h>                       // for close, read
+#include <bits/types/struct_itimerspec.h>  // for itimerspec
+#include <cxxabi.h>                        // for __forced_unwind
+#include <poll.h>                          // for pollfd, poll, POLLIN
+#include <sys/timerfd.h>                   // for timerfd_create, timerfd_se...
+#include <unistd.h>                        // for close, read
 
-#include <algorithm>    // for for_each, max
-#include <cerrno>       // for errno
-#include <cstdint>      // for int64_t, uint64_t
-#include <cstring>      // for strerror
-#include <ctime>        // for timespec, clock_gettime
-#include <optional>     // for optional
-#include <system_error> // for system_error
-#include <utility>      // for pair
+#include <algorithm>     // for for_each, max
+#include <cerrno>        // for errno
+#include <cstdint>       // for int64_t, uint64_t
+#include <cstring>       // for strerror
+#include <ctime>         // for timespec, clock_gettime
+#include <optional>      // for optional
+#include <system_error>  // for system_error
+#include <utility>       // for pair
 
-#include "task.h" // for ITask
+#include "task.h"  // for ITask
 
 static constexpr int64_t kSecToMSec = 1e3;
 static constexpr int64_t kMSecToNSec = 1e6;
 
 static inline auto ConvertToTimespec(const int64_t interval_ms) {
-  return timespec{.tv_sec = interval_ms / kSecToMSec,
-                  .tv_nsec =
-                      (interval_ms - (interval_ms / kSecToMSec) * kSecToMSec) *
-                      kMSecToNSec};
+  return timespec{
+      .tv_sec = interval_ms / kSecToMSec,
+      .tv_nsec = (interval_ms - (interval_ms / kSecToMSec) * kSecToMSec) *
+                 kMSecToNSec};
 }
 
 namespace ts {
@@ -85,7 +85,7 @@ namespace ts {
   return {};
 }
 
-[[nodiscard]] OpResult TaskScheduler::RegisterTask(ITask *task) {
+[[nodiscard]] OpResult TaskScheduler::RegisterTask(ITask* task) {
   if (!task) {
     return "Task cannot be nullptr";
   }
@@ -100,21 +100,29 @@ namespace ts {
   task_map_[task->GetName()] = {.task = task, .fd = fd};
   fd_map_[fd] = task;
 
+  if (!timer_fds_.Add(fd)) {
+    return "Timer fd is already registered: " + std::to_string(fd);
+  }
+
+  if (!io_fds_.Add(task->GetFd())) {
+    return "IO fd is already registered: " + std::to_string(task->GetFd());
+  }
+
   return {};
 }
 
 [[nodiscard]] OpResult TaskScheduler::Start() {
   thread_ = std::async([&]() {
-    Log::RegisterThread("TaskScheduler");
+    // Log::RegisterThread("TaskScheduler");
 
     auto fd_list = CreateFdList();
     if (fd_list.empty()) {
-      Log::Error("Task Scheduler Invalid task list");
+      // Log::Error("Task Scheduler Invalid task list");
       return;
     }
 
     if (const auto ret = ArmTimers(); ret.has_value()) {
-      Log::Error("Task Scheduler Arming timers failed: " + *ret);
+      // Log::Error("Task Scheduler Arming timers failed: " + *ret);
       return;
     }
 
@@ -124,26 +132,26 @@ namespace ts {
     while (run_.load()) {
       const auto ret = poll(fd_list.data(), fd_list.size(), -1);
       if (ret < 0) {
-        Log::Error("Task Scheduler poll error: " +
-                   std::string(std::strerror(errno)));
+        // Log::Error("Task Scheduler poll error: " +
+        // std::string(std::strerror(errno)));
         continue;
       }
 
-      std::for_each(fd_list.begin(), fd_list.end(), [&](const pollfd &pfd) {
+      std::for_each(fd_list.begin(), fd_list.end(), [&](const pollfd& pfd) {
         if (pfd.revents & POLLIN) {
           if (read(pfd.fd, &exp, sizeof(exp)) == -1) {
-            Log::Error("Task Scheduler read error: " +
-                       std::string(std::strerror(errno)));
+            // Log::Error("Task Scheduler read error: " +
+            // std::string(std::strerror(errno)));
           }
 
           if (auto it = fd_map_.find(pfd.fd); it != fd_map_.end()) {
-            it->second->Execute();
+            // it->second->Execute();
           }
         }
       });
     }
 
-    std::for_each(fd_list.begin(), fd_list.end(), [&](const pollfd &pfd) {
+    std::for_each(fd_list.begin(), fd_list.end(), [&](const pollfd& pfd) {
       if (pfd.fd) {
         close(pfd.fd);
       }
@@ -168,7 +176,7 @@ namespace ts {
 }
 
 [[nodiscard]] OpResult TaskScheduler::ArmTimers() {
-  for (const auto &t : task_map_) {
+  for (const auto& t : task_map_) {
     if (const auto ret =
             StartTimer(t.second.fd, t.second.task->GetInterval())) {
       return *ret;
@@ -181,10 +189,10 @@ std::vector<pollfd> TaskScheduler::CreateFdList() {
   std::vector<pollfd> timer_fd_list;
   timer_fd_list.reserve(task_map_.size());
 
-  for (const auto &timer : task_map_) {
+  for (const auto& timer : task_map_) {
     timer_fd_list.push_back({.fd = timer.second.fd, .events = POLLIN});
   }
 
   return timer_fd_list;
 }
-} // namespace ts
+}  // namespace ts
