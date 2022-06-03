@@ -85,77 +85,63 @@ namespace ts {
   return {};
 }
 
-[[nodiscard]] OpResult TaskScheduler::RegisterTask(ITask* task) {
+[[nodiscard]] OpResult TaskScheduler::RegisterTask(TaskPtr task) {
   if (!task) {
     return "Task cannot be nullptr";
   }
 
-  if (const auto ret = task_map_.find(task->GetName());
-      ret != task_map_.end()) {
-    return "Task is already registered: " + task->GetName();
+  const auto unique_id = task->GetUniqueId();
+
+  if (const auto it = task_map_.find(unique_id); it != task_map_.end()) {
+    return "Task is already registered :" + std::to_string(unique_id);
   }
 
-  const auto fd = timerfd_create(CLOCK_REALTIME, 0);
+  task_map_[unique_id] = std::move(task);
 
-  task_map_[task->GetName()] = {.task = task, .fd = fd};
-  fd_map_[fd] = task;
+  cb_map_[task->GetTimerFd()] = [&t = task_map_[unique_id]](
+                                    const char* /*buf*/, const size_t /*len*/) {
+    t->Handle(EventType::TIMEOUT, nullptr, 0);
+  };
 
-  if (!timer_fds_.Add(fd)) {
-    return "Timer fd is already registered: " + std::to_string(fd);
-  }
-
-  if (!io_fds_.Add(task->GetFd())) {
-    return "IO fd is already registered: " + std::to_string(task->GetFd());
-  }
+  cb_map_[task->GetIoFd()] = [&t = task_map_[unique_id]](const char* buf,
+                                                         const size_t len) {
+    t->Handle(EventType::MESSAGE_RECEIVED, buf, len);
+  };
 
   return {};
 }
 
 [[nodiscard]] OpResult TaskScheduler::Start() {
   thread_ = std::async([&]() {
-    // Log::RegisterThread("TaskScheduler");
-
     auto fd_list = CreateFdList();
     if (fd_list.empty()) {
-      // Log::Error("Task Scheduler Invalid task list");
       return;
     }
 
     if (const auto ret = ArmTimers(); ret.has_value()) {
-      // Log::Error("Task Scheduler Arming timers failed: " + *ret);
       return;
     }
 
     run_.store(true);
     uint64_t exp{};
 
+    std::array<char, 1024> buf{};
+
     while (run_.load()) {
       const auto ret = poll(fd_list.data(), fd_list.size(), -1);
       if (ret < 0) {
-        // Log::Error("Task Scheduler poll error: " +
-        // std::string(std::strerror(errno)));
         continue;
       }
 
       std::for_each(fd_list.begin(), fd_list.end(), [&](const pollfd& pfd) {
         if (pfd.revents & POLLIN) {
-          if (read(pfd.fd, &exp, sizeof(exp)) == -1) {
-            // Log::Error("Task Scheduler read error: " +
-            // std::string(std::strerror(errno)));
-          }
-
-          if (auto it = fd_map_.find(pfd.fd); it != fd_map_.end()) {
-            // it->second->Execute();
+          if (const auto it = cb_map_.find(pfd.fd); it != cb_map_.end()) {
+            const auto len = read(pfd.fd, buf.data(), buf.size());
+            it->second(buf.data(), len);
           }
         }
       });
     }
-
-    std::for_each(fd_list.begin(), fd_list.end(), [&](const pollfd& pfd) {
-      if (pfd.fd) {
-        close(pfd.fd);
-      }
-    });
   });
 
   return {};
@@ -177,22 +163,23 @@ namespace ts {
 
 [[nodiscard]] OpResult TaskScheduler::ArmTimers() {
   for (const auto& t : task_map_) {
-    if (const auto ret =
-            StartTimer(t.second.fd, t.second.task->GetInterval())) {
+    if (const auto ret = StartTimer(t.first, t.second->GetInterval());
+        ret.has_value()) {
       return *ret;
     }
   }
   return {};
 }
 
-std::vector<pollfd> TaskScheduler::CreateFdList() {
-  std::vector<pollfd> timer_fd_list;
-  timer_fd_list.reserve(task_map_.size());
+[[nodiscard]] std::vector<pollfd> TaskScheduler::CreateFdList() {
+  std::vector<pollfd> fd_list;
+  fd_list.reserve(task_map_.size());
 
-  for (const auto& timer : task_map_) {
-    timer_fd_list.push_back({.fd = timer.second.fd, .events = POLLIN});
-  }
+  std::for_each(task_map_.begin(), task_map_.end(), [&](const auto& p) {
+    fd_list.push_back({.fd = p.second->GetIoFd(), .events = POLLIN});
+    fd_list.push_back({.fd = p.second->GetTimerFd(), .events = POLLIN});
+  });
 
-  return timer_fd_list;
+  return fd_list;
 }
 }  // namespace ts

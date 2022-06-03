@@ -5,54 +5,62 @@
 #include <cstdint>
 #include <string>
 
+#include "common.h"
+
 namespace ts {
 
 /**
- * @brief An interface for the tasks
+ * @brief An abstrct base class for the tasks
  */
-class ITask {
+class Task {
  public:
   /**
    * @brief Default constructor.
    */
-  ITask() = default;
+  Task();
 
   /**
    * @brief Default destructor.
    */
-  virtual ~ITask() = default;
+  virtual ~Task();
 
   /**
    * @brief Copy constructor.
    * @param other Instance to be copied.
    */
-  ITask(const ITask& other) noexcept = delete;
+  Task(const Task& other) noexcept = delete;
 
   /**
    * @brief Copy assignment operator
    * @param other Instance to be copied.
    * @return Copied instance
    */
-  ITask& operator=(const ITask& other) noexcept = delete;
+  Task& operator=(const Task& other) noexcept = delete;
 
   /**
    * @brief Move constructor.
    * @param other Instance to be moved.
    */
-  ITask(ITask&& other) noexcept = delete;
+  Task(Task&& other) noexcept = delete;
 
   /**
    * @brief Move assignment operator
    * @param other Instance to be moved.
    * @return New instance
    */
-  ITask& operator=(ITask&& other) noexcept = delete;
+  Task& operator=(Task&& other) noexcept = delete;
 
   /**
-   * @brief Returns the name of the task.
-   * @return name of the task
+   * @brief Returns the unique id of the task.
+   * @return unique id of the task
    */
-  [[nodiscard]] virtual std::string GetName() const = 0;
+  [[nodiscard]] uint32_t GetUniqueId() const;
+
+  /**
+   * @brief Returns the timer fd of the task.
+   * @return timer fd of the task
+   */
+  [[nodiscard]] int GetTimerFd() const;
 
   /**
    * @brief Returns the period of the task
@@ -64,11 +72,14 @@ class ITask {
    * @brief Returns the io fd of the task
    * @return IO file descriptor
    */
-  [[nodiscard]] virtual int GetFd() const = 0;
+  [[nodiscard]] virtual int GetIoFd() const = 0;
 
-  virtual void OnMessageReceived(const char* data, const size_t len) = 0;
-  virtual void OnTimeout() = 0;
-  virtual void OnReadyToWrite() = 0;
+  virtual void Handle(const EventType evt_type, const char* data,
+                      const size_t len) = 0;
+
+ private:
+  int timer_fd_;
+  uint32_t id_;
 };
 
 }  // namespace ts
