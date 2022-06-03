@@ -91,6 +91,8 @@ namespace ts {
   }
 
   const auto unique_id = task->GetUniqueId();
+  const auto timer_id = task->GetTimerFd();
+  const auto io_id = task->GetIoFd();
 
   if (const auto it = task_map_.find(unique_id); it != task_map_.end()) {
     return "Task is already registered :" + std::to_string(unique_id);
@@ -98,13 +100,13 @@ namespace ts {
 
   task_map_[unique_id] = std::move(task);
 
-  cb_map_[task->GetTimerFd()] = [&t = task_map_[unique_id]](
-                                    const char* /*buf*/, const size_t /*len*/) {
+  cb_map_[timer_id] = [&t = task_map_[unique_id]](const char* /*buf*/,
+                                                  const size_t /*len*/) {
     t->Handle(EventType::TIMEOUT, nullptr, 0);
   };
 
-  cb_map_[task->GetIoFd()] = [&t = task_map_[unique_id]](const char* buf,
-                                                         const size_t len) {
+  cb_map_[io_id] = [&t = task_map_[unique_id]](const char* buf,
+                                               const size_t len) {
     t->Handle(EventType::MESSAGE_RECEIVED, buf, len);
   };
 
