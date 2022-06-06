@@ -20,6 +20,8 @@
 
 static constexpr int64_t kSecToMSec = 1e3;
 static constexpr int64_t kMSecToNSec = 1e6;
+static constexpr int64_t kMaxNanoSec = 999999999;
+static constexpr int64_t kInternalBufSize = 1024;
 
 static inline auto ConvertToTimespec(const int64_t interval_ms) {
   return timespec{
@@ -38,6 +40,13 @@ namespace ts {
   }
 
   return {};
+}
+
+static inline void ClampTimeSpec(timespec& ts) {
+  if (ts.tv_nsec > kMaxNanoSec) {
+    ts.tv_sec++;
+    ts.tv_nsec -= kMaxNanoSec;
+  }
 }
 
 [[nodiscard]] static inline OpResult StartTimer(int fd,
@@ -64,6 +73,9 @@ namespace ts {
       }
     };
   // clang-format on
+
+  ClampTimeSpec(new_value.it_interval);
+  ClampTimeSpec(new_value.it_value);
 
   if (timerfd_settime(fd, TFD_TIMER_ABSTIME, &new_value, nullptr) == -1) {
     return "timerfd_settime failed: " + std::string(std::strerror(errno));
@@ -103,11 +115,19 @@ namespace ts {
   cb_map_[timer_id] = [&t = task_map_[unique_id]](const char* /*buf*/,
                                                   const size_t /*len*/) {
     t->Handle(EventType::TIMEOUT, nullptr, 0);
+    if (const auto ret = RestartTimer(t->GetTimerFd(), t->GetInterval());
+        ret.has_value()) {
+      // log error
+    }
   };
 
   cb_map_[io_id] = [&t = task_map_[unique_id]](const char* buf,
                                                const size_t len) {
     t->Handle(EventType::MESSAGE_RECEIVED, buf, len);
+    if (const auto ret = RestartTimer(t->GetTimerFd(), t->GetInterval());
+        ret.has_value()) {
+      // log error
+    }
   };
 
   return {};
@@ -127,7 +147,7 @@ namespace ts {
     run_.store(true);
     uint64_t exp{};
 
-    std::array<char, 1024> buf{};
+    std::array<char, kInternalBufSize> buf{};
 
     while (run_.load()) {
       const auto ret = poll(fd_list.data(), fd_list.size(), -1);
@@ -165,7 +185,8 @@ namespace ts {
 
 [[nodiscard]] OpResult TaskScheduler::ArmTimers() {
   for (const auto& t : task_map_) {
-    if (const auto ret = StartTimer(t.first, t.second->GetInterval());
+    if (const auto ret =
+            StartTimer(t.second->GetTimerFd(), t.second->GetInterval());
         ret.has_value()) {
       return *ret;
     }
